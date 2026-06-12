@@ -10,21 +10,36 @@ export function useRoom(roomCode) {
 
   useEffect(() => {
     if (!roomCode) { setRoom(null); setLoading(false); setError(null); return }
-    setLoading(true); setError(null)
-    const unsub = onValue(ref(db, `rooms/${roomCode}`), snap => {
+
+    setLoading(true)
+    setError(null)
+
+    const roomRef = ref(db, `rooms/${roomCode}`)
+
+    const unsub = onValue(roomRef, (snap) => {
       const data = snap.val()
       if (!data) { setRoom(null); setError('Raum nicht gefunden.'); setLoading(false); return }
+
       const players = data.players
         ? Object.entries(data.players)
-            .map(([id,p]) => ({ id, name:p.name, colorIdx:p.colorIdx, drinks:p.drinks??0, color:PLAYER_COLORS[p.colorIdx%PLAYER_COLORS.length] }))
-            .sort((a,b) => a.colorIdx-b.colorIdx)
+            .map(([id, p]) => ({
+              id,
+              name:     p.name,
+              colorIdx: p.colorIdx,
+              drinks:   p.drinks ?? 0,
+              color:    PLAYER_COLORS[p.colorIdx % PLAYER_COLORS.length],
+            }))
+            .sort((a, b) => a.colorIdx - b.colorIdx)
         : []
-      const gameState  = data.gsj ? JSON.parse(data.gsj) : null
-      const waitingRoom = data.waitingRoom ? Object.entries(data.waitingRoom).map(([id,d])=>({id,...d})) : []
-      setRoom({ ...data, players, gameState, waitingRoom })
+
+      // Parse game state JSON (avoids Firebase array-to-object conversion)
+      const gameState = data.gsj ? JSON.parse(data.gsj) : null
+
+      setRoom({ ...data, players, gameState })
       setLoading(false)
-    }, err => { setError(err.message); setLoading(false) })
-    return () => off(ref(db, `rooms/${roomCode}`))
+    }, (err) => { setError(err.message); setLoading(false) })
+
+    return () => off(roomRef)
   }, [roomCode])
 
   return { room, loading, error }

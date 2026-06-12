@@ -288,20 +288,3 @@ input[type="text"]:focus {
   from { letter-spacing: 0.1em; opacity: 0; }
   to   { letter-spacing: 0.28em; opacity: 1; }
 }
-
-/* ── App-level polish ──────────────────────────────────────────────────────── */
-@keyframes screenIn {
-  from { opacity:0; transform:translateY(10px); }
-  to   { opacity:1; transform:translateY(0); }
-}
-.screen { animation: screenIn 0.25s ease both; }
-
-.player-row:hover { border-color: var(--primary-border) !important; }
-.game-card:hover  { box-shadow: 0 8px 24px rgba(83,74,183,0.12); }
-
-.btn-primary, .btn-ghost { transition: background 0.12s, transform 0.1s; }
-.btn-primary:active:not(:disabled) { transform: scale(0.98); }
-.btn-ghost:active { transform: scale(0.98); }
-
-/* Safe area for iOS PWA */
-body { padding-bottom: env(safe-area-inset-bottom, 0); }
