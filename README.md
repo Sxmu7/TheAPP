@@ -1,89 +1,143 @@
-# Prost! 🍺 — Multiplayer Trinkspiele App
+# Prost! 🍺 — Setup-Anleitung
 
-## Schnellstart
+## Schritt 1 — Firebase-Projekt erstellen
 
-### 1. Dependencies installieren
-```bash
-npm install
-```
-
-### 2. Lokal starten
-```bash
-npm run dev
-```
-
-### 3. Build für Produktion
-```bash
-npm run build
-```
+1. Gehe zu **[console.firebase.google.com](https://console.firebase.google.com)**
+2. Klick auf **"Projekt erstellen"**
+3. Namen eingeben (z.B. `prost-app`) → Weiter → Weiter → Projekt erstellen
 
 ---
 
-## Auf Vercel deployen
+## Schritt 2 — Realtime Database aktivieren
 
-### Option A — GitHub (empfohlen)
-1. Diesen Ordner als neues GitHub-Repo hochladen
-2. Auf [vercel.com](https://vercel.com) einloggen
-3. **"Add New Project"** → GitHub-Repo auswählen
-4. Framework: **Vite** (wird automatisch erkannt)
-5. **Deploy** klicken — fertig ✅
+1. Im linken Menü: **Build → Realtime Database**
+2. Klick **"Datenbank erstellen"**
+3. Standort wählen (z.B. `europe-west1`) → Weiter
+4. **"Im Testmodus starten"** auswählen → Fertig
 
-### Option B — Vercel CLI
-```bash
-npm i -g vercel
-vercel
+---
+
+## Schritt 3 — Sicherheitsregeln einstellen
+
+1. Öffne den **"Regeln"**-Tab in der Realtime Database
+2. Ersetze den gesamten Inhalt mit dem aus `database.rules.json`:
+
+```json
+{
+  "rules": {
+    "rooms": {
+      "$roomCode": {
+        ".read": true,
+        ".write": true,
+        ".validate": "newData.hasChildren(['status'])",
+        "players": {
+          "$playerId": {
+            ".validate": "newData.hasChildren(['name', 'colorIdx', 'drinks'])"
+          }
+        }
+      }
+    }
+  }
+}
 ```
+
+3. Klick **"Veröffentlichen"**
+
+---
+
+## Schritt 4 — Firebase-Konfiguration kopieren
+
+1. Klick oben links auf das Zahnrad ⚙️ → **Projekteinstellungen**
+2. Scrolle runter zu **"Deine Apps"**
+3. Klick auf **"</>"** (Web-App hinzufügen)
+4. App-Name eingeben → **"App registrieren"**
+5. Du siehst jetzt ein `firebaseConfig`-Objekt — alles kopieren
+6. Öffne **`src/firebase.js`** und füge die Werte ein:
+
+```js
+const firebaseConfig = {
+  apiKey:            "...",
+  authDomain:        "...",
+  databaseURL:       "https://DEIN-PROJEKT-default-rtdb.firebaseio.com",
+  projectId:         "...",
+  storageBucket:     "...",
+  messagingSenderId: "...",
+  appId:             "...",
+}
+```
+
+> ⚠️ Wichtig: `databaseURL` muss auf `-rtdb.firebaseio.com` enden — nicht `.firebaseapp.com`!
+
+---
+
+## Schritt 5 — Lokal testen
+
+```bash
+npm install
+npm run dev
+```
+
+Öffne zwei Browser-Tabs mit `http://localhost:5173` — in Tab 1 einen Raum erstellen, in Tab 2 mit dem Code beitreten. Spieler werden in Echtzeit synchronisiert. ✅
+
+---
+
+## Schritt 6 — Auf Vercel deployen
+
+1. Diesen Ordner auf GitHub hochladen (wie vorher)
+2. Auf **[vercel.com](https://vercel.com)** → "Add New Project" → Repo auswählen
+3. Framework: **Vite** (automatisch erkannt)
+4. **Deploy** klicken ✅
 
 ---
 
 ## Trinkspiele hinzufügen
 
-### 1. `src/constants.js` öffnen
-Trage deine Spiele in das `GAMES`-Array ein:
+### 1. Spiel in `src/constants.js` eintragen:
 ```js
 {
-  id:    'g1',
-  emoji: '🎯',
+  id:    'wahrheit',
+  emoji: '🤫',
   name:  'Wahrheit oder Pflicht',
   desc:  'Klassiker für alle',
-  ready: true,         // ← auf true setzen, wenn das Spiel fertig ist
-  type:  'truth-or-dare',
+  ready: true,
+  type:  'wahrheit-oder-pflicht',
 }
 ```
 
-### 2. `src/screens/InGameScreen.jsx` öffnen
-Füge deinen Spielinhalt in den `switch` ein:
+### 2. Spielkomponente in `src/screens/InGameScreen.jsx` einbauen:
 ```jsx
 switch (game?.type) {
-  case 'truth-or-dare':
-    return <TruthOrDareGame player={currentPlayer} />
-  // weitere Spiele hier…
+  case 'wahrheit-oder-pflicht':
+    return <WahrheitOderPflicht player={currentPlayer} />
 }
 ```
 
-### 3. Eigene Spielkomponente anlegen
-Erstelle z.B. `src/games/TruthOrDare.jsx` und importiere sie in `InGameScreen.jsx`.
+### 3. Komponente erstellen: `src/games/WahrheitOderPflicht.jsx`
 
 ---
 
 ## Projektstruktur
 
 ```
-prost/
-├── public/
-│   └── favicon.svg
+prost-online/
+├── database.rules.json         ← Firebase-Sicherheitsregeln
+├── public/favicon.svg
 ├── src/
+│   ├── firebase.js             ← HIER deine Firebase-Konfig einfügen
+│   ├── firebaseApi.js          ← Alle Datenbank-Operationen
+│   ├── hooks/
+│   │   └── useRoom.js          ← Echtzeit-Listener
 │   ├── components/
-│   │   └── Avatar.jsx          ← Spieler-Avatar (Initialen + Farbe)
+│   │   └── Avatar.jsx
 │   ├── screens/
-│   │   ├── HomeScreen.jsx      ← Startseite (Raum erstellen / beitreten)
-│   │   ├── LobbyScreen.jsx     ← Spieler hinzufügen, Raumcode teilen
-│   │   ├── GameSelectScreen.jsx← Spielauswahl-Gitter
-│   │   └── InGameScreen.jsx    ← Spielansicht + Drink-Counter
-│   ├── App.jsx                 ← State-Machine & Screen-Router
-│   ├── constants.js            ← GAMES-Array + Spielerfarben
-│   ├── index.css               ← Design-System (Dark Mode inklusive)
-│   └── main.jsx                ← React-Einstiegspunkt
+│   │   ├── HomeScreen.jsx
+│   │   ├── LobbyScreen.jsx
+│   │   ├── GameSelectScreen.jsx
+│   │   └── InGameScreen.jsx
+│   ├── App.jsx                 ← State-Machine
+│   ├── constants.js            ← GAMES-Array
+│   ├── index.css
+│   └── main.jsx
 ├── index.html
 ├── vite.config.js
 ├── vercel.json

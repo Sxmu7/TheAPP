@@ -78,3 +78,15 @@ export async function nextPlayer(roomCode, currentIdx, total) {
     playerIdx: (currentIdx + 1) % total,
   })
 }
+
+// ── Game State (stored as JSON string to avoid Firebase array mangling) ───────
+
+export async function saveGameState(roomCode, gameState) {
+  await update(ref(db, `rooms/${roomCode}`), {
+    gsj: JSON.stringify(gameState),
+  })
+}
+
+export async function clearGameState(roomCode) {
+  await update(ref(db, `rooms/${roomCode}`), { gsj: null })
+}

@@ -9,67 +9,20 @@ export const PLAYER_COLORS = [
   { fill: '#FCEBEB', stroke: '#E24B4A', text: '#791F1F' },
 ]
 
-// ---------------------------------------------------------------------------
-// SPIELE — hier trägst du die Spiele ein.
-// Jedes Objekt hat:
-//   id      → eindeutige ID (string)
-//   emoji   → Emoji-Icon
-//   name    → Angezeigter Name
-//   desc    → Kurzbeschreibung
-//   ready   → false = "In Kürze"-Badge, true = spielbar
-//   type    → 'placeholder' | 'truth-or-dare' | 'never-have-i' | 'custom' | …
-//             (wird später von InGameScreen ausgelesen, um den richtigen
-//              Spielinhalt zu rendern)
-// ---------------------------------------------------------------------------
 export const GAMES = [
   {
-    id: 'g1',
-    emoji: '🍺',
-    name: 'Spiel 1',
-    desc: 'Kommt bald',
-    ready: false,
-    type: 'placeholder',
-  },
-  {
-    id: 'g2',
-    emoji: '🎲',
-    name: 'Spiel 2',
-    desc: 'Kommt bald',
-    ready: false,
-    type: 'placeholder',
-  },
-  {
-    id: 'g3',
+    id:    'g1',
     emoji: '🃏',
-    name: 'Spiel 3',
-    desc: 'Kommt bald',
-    ready: false,
-    type: 'placeholder',
+    name:  'Arschloch',
+    desc:  '3–6 Spieler · Karten · Klassiker',
+    ready: true,
+    type:  'arschloch',
   },
-  {
-    id: 'g4',
-    emoji: '🤔',
-    name: 'Spiel 4',
-    desc: 'Kommt bald',
-    ready: false,
-    type: 'placeholder',
-  },
-  {
-    id: 'g5',
-    emoji: '⚡',
-    name: 'Spiel 5',
-    desc: 'Kommt bald',
-    ready: false,
-    type: 'placeholder',
-  },
-  {
-    id: 'g6',
-    emoji: '🏆',
-    name: 'Spiel 6',
-    desc: 'Kommt bald',
-    ready: false,
-    type: 'placeholder',
-  },
+  { id:'g2', emoji:'🎲', name:'Spiel 2', desc:'Kommt bald', ready:false, type:'placeholder' },
+  { id:'g3', emoji:'🤔', name:'Spiel 3', desc:'Kommt bald', ready:false, type:'placeholder' },
+  { id:'g4', emoji:'⚡', name:'Spiel 4', desc:'Kommt bald', ready:false, type:'placeholder' },
+  { id:'g5', emoji:'🏆', name:'Spiel 5', desc:'Kommt bald', ready:false, type:'placeholder' },
+  { id:'g6', emoji:'🎯', name:'Spiel 6', desc:'Kommt bald', ready:false, type:'placeholder' },
 ]
 
 export const genCode = () =>

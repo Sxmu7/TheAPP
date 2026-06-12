@@ -1,7 +1,3 @@
-// Echtzeit-Listener auf den Raum in Firebase.
-// Sobald irgendein Gerät etwas ändert, bekommt jedes andere Gerät
-// die Aktualisierung automatisch — ohne Refresh.
-
 import { useEffect, useState } from 'react'
 import { ref, onValue, off }   from 'firebase/database'
 import { db }                   from '../firebase'
@@ -13,51 +9,35 @@ export function useRoom(roomCode) {
   const [error, setError]     = useState(null)
 
   useEffect(() => {
-    if (!roomCode) {
-      setRoom(null)
-      setLoading(false)
-      setError(null)
-      return
-    }
+    if (!roomCode) { setRoom(null); setLoading(false); setError(null); return }
 
     setLoading(true)
     setError(null)
 
     const roomRef = ref(db, `rooms/${roomCode}`)
 
-    const unsub = onValue(
-      roomRef,
-      (snap) => {
-        const data = snap.val()
+    const unsub = onValue(roomRef, (snap) => {
+      const data = snap.val()
+      if (!data) { setRoom(null); setError('Raum nicht gefunden.'); setLoading(false); return }
 
-        if (!data) {
-          setRoom(null)
-          setError('Raum nicht gefunden.')
-          setLoading(false)
-          return
-        }
+      const players = data.players
+        ? Object.entries(data.players)
+            .map(([id, p]) => ({
+              id,
+              name:     p.name,
+              colorIdx: p.colorIdx,
+              drinks:   p.drinks ?? 0,
+              color:    PLAYER_COLORS[p.colorIdx % PLAYER_COLORS.length],
+            }))
+            .sort((a, b) => a.colorIdx - b.colorIdx)
+        : []
 
-        // Spieler-Objekt → sortiertes Array
-        const players = data.players
-          ? Object.entries(data.players)
-              .map(([id, p]) => ({
-                id,
-                name:     p.name,
-                colorIdx: p.colorIdx,
-                drinks:   p.drinks ?? 0,
-                color:    PLAYER_COLORS[p.colorIdx % PLAYER_COLORS.length],
-              }))
-              .sort((a, b) => a.colorIdx - b.colorIdx)
-          : []
+      // Parse game state JSON (avoids Firebase array-to-object conversion)
+      const gameState = data.gsj ? JSON.parse(data.gsj) : null
 
-        setRoom({ ...data, players })
-        setLoading(false)
-      },
-      (err) => {
-        setError(err.message)
-        setLoading(false)
-      },
-    )
+      setRoom({ ...data, players, gameState })
+      setLoading(false)
+    }, (err) => { setError(err.message); setLoading(false) })
 
     return () => off(roomRef)
   }, [roomCode])
