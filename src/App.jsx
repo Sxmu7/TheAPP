@@ -1,26 +1,40 @@
-import { useState, useEffect } from 'react'
-import { usePlayerName }        from './hooks/usePlayerName'
-import { useRoom }              from './hooks/useRoom'
-import * as api                 from './firebaseApi'
-import { GAMES, genCode }       from './constants'
+import { useState, useEffect }        from 'react'
+import { get, ref }                   from 'firebase/database'
+import { db }                         from './firebase'
+import { usePlayerName }              from './hooks/usePlayerName'
+import { useRoom }                    from './hooks/useRoom'
+import * as api                       from './firebaseApi'
+import { GAMES, PLAYER_COLORS, genCode } from './constants'
 
-import OnboardingScreen   from './screens/OnboardingScreen'
-import LandingScreen      from './screens/LandingScreen'
-import LobbyScreen        from './screens/LobbyScreen'
-import WaitingRoomScreen  from './screens/WaitingRoomScreen'
-import GameSelectScreen   from './screens/GameSelectScreen'
-import InGameScreen       from './screens/InGameScreen'
+import OnboardingScreen  from './screens/OnboardingScreen'
+import LandingScreen     from './screens/LandingScreen'
+import LobbyScreen       from './screens/LobbyScreen'
+import WaitingRoomScreen from './screens/WaitingRoomScreen'
+import GameSelectScreen  from './screens/GameSelectScreen'
+import InGameScreen      from './screens/InGameScreen'
 
 function Loading() {
-  return <div style={{ minHeight:'100dvh', background:'#0b1520', display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap:12 }}><div style={{fontSize:36}}>🃏</div><p style={{color:'rgba(255,255,255,0.4)',fontSize:14,margin:0,fontFamily:'inherit'}}>Verbinde…</p></div>
+  return (
+    <div style={{ minHeight:'100dvh', background:'#0b1520', display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap:12 }}>
+      <div style={{ fontSize:36 }}>🃏</div>
+      <p style={{ color:'rgba(255,255,255,0.4)', fontSize:14, margin:0, fontFamily:'inherit' }}>Verbinde…</p>
+    </div>
+  )
 }
 
 function ErrorScreen({ msg, onBack }) {
-  return <div style={{ minHeight:'100dvh', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:16, padding:'2rem', textAlign:'center' }}><div style={{fontSize:36}}>⚠️</div><p style={{fontWeight:500,margin:0}}>{msg}</p><button className="btn-ghost" onClick={onBack} style={{maxWidth:240}}>Zurück</button></div>
+  return (
+    <div style={{ minHeight:'100dvh', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:16, padding:'2rem', textAlign:'center' }}>
+      <div style={{ fontSize:36 }}>⚠️</div>
+      <p style={{ fontWeight:500, margin:0 }}>{msg}</p>
+      <button className="btn-ghost" onClick={onBack} style={{ maxWidth:240 }}>Zurück</button>
+    </div>
+  )
 }
 
 export default function App() {
   const { name, playerId, saveName, clearName, hasName } = usePlayerName()
+
   const [roomCode, setRoomCode] = useState(() => {
     const p = new URLSearchParams(window.location.search).get('join')
     return p ? p.toUpperCase() : ''
@@ -30,78 +44,78 @@ export default function App() {
 
   const { room, loading, error } = useRoom(roomCode)
 
-  // Auto-join via URL parameter
+  // Auto-join via URL ?join=CODE
   useEffect(() => {
     const code = new URLSearchParams(window.location.search).get('join')
-    if (code && hasName && !roomCode) {
-      handleJoinRoom(code.toUpperCase())
-    }
+    if (code && hasName && !roomCode) handleJoinRoom(code.toUpperCase())
   }, [hasName])
 
-  // Watch vote and auto-resolve when all players have voted
+  // Auto-resolve vote when all players have voted
   useEffect(() => {
     if (!room?.vote?.active) return
     const total = room.players?.length || 0
     const yes   = room.vote.yes?.length || 0
     const no    = room.vote.no?.length  || 0
-    if (yes + no >= total) {
-      const result = yes > total / 2 ? 'yes' : 'no'
-      api.resolveVote(roomCode, result)
+    if (total > 0 && yes + no >= total) {
+      api.resolveVote(roomCode, yes > total / 2 ? 'yes' : 'no')
     }
   }, [room?.vote])
 
   // ── Handlers ───────────────────────────────────────────────────────────────
 
   const handleCreateRoom = async () => {
-    if (!hasName) return; setCreating(true)
+    if (!hasName) return
+    setCreating(true)
     const code = genCode()
     await api.createRoom(code, playerId)
-    // Auto-add yourself as first player
     await api.addPlayerWithId(code, playerId, name, 0)
-    setRoomCode(code); setCreating(false)
+    setRoomCode(code)
+    setCreating(false)
   }
 
   const handleJoinRoom = async (code) => {
-    if (!hasName) return; setJoining(true)
+    if (!hasName) return
+    setJoining(true)
     const exists = await api.roomExists(code)
     if (!exists) { alert('Raum nicht gefunden.'); setJoining(false); return }
-    // Check if already in room
-    const snap = await import('firebase/database').then(({get, ref}) => get(ref((await import('./firebase')).db, `rooms/${code}/players/${playerId}`)))
-    if (!snap.exists()) {
-      // Get current player count for color assignment
-      const roomSnap = await import('firebase/database').then(({get,ref})=>get(ref((await import('./firebase')).db,`rooms/${code}`)))
-      const data = roomSnap.val()
-      const count = data?.players ? Object.keys(data.players).length : 0
-      await api.addPlayerWithId(code, playerId, name, count)
+
+    // Check if this device's player is already in the room
+    const playerSnap = await get(ref(db, `rooms/${code}/players/${playerId}`))
+    if (!playerSnap.exists()) {
+      const roomSnap = await get(ref(db, `rooms/${code}`))
+      const data     = roomSnap.val()
+      const count    = data?.players ? Object.keys(data.players).length : 0
+      const colorIdx = count % PLAYER_COLORS.length
+      await api.addPlayerWithId(code, playerId, name, colorIdx)
     }
-    setRoomCode(code); setJoining(false)
-    // Clear URL params
+
     window.history.replaceState({}, '', '/')
+    setRoomCode(code)
+    setJoining(false)
   }
 
-  const handleLeave = () => { setRoomCode('') }
-
+  const handleLeave          = ()      => setRoomCode('')
   const handleRegenerateCode = async () => {
     const newCode = await api.regenerateCode(roomCode, playerId, room.players)
     setRoomCode(newCode)
   }
-
-  const handleAddPlayer    = async (n) => {
+  const handleAddPlayer      = async (n) => {
     if (!room || room.players.length >= 8) return
     await api.addPlayer(roomCode, n, room.players.length)
   }
-  const handleRemovePlayer = async (id) => api.removePlayer(roomCode, id)
-  const handleChangeDrinks = async (id, delta) => {
-    const p = room?.players?.find(x=>x.id===id); if(!p) return
-    await api.changeDrinks(roomCode, id, p.drinks+delta)
+  const handleRemovePlayer   = async (id) => api.removePlayer(roomCode, id)
+  const handleChangeDrinks   = async (id, delta) => {
+    const p = room?.players?.find(x => x.id === id)
+    if (!p) return
+    await api.changeDrinks(roomCode, id, p.drinks + delta)
   }
-  const handleStart        = async () => api.setStatus(roomCode, 'game-select')
-  const handleSelectGame   = async (g) => { await api.clearGameState(roomCode); await api.selectGame(roomCode, g.id) }
-  const handleNextPlayer   = async () => api.nextPlayer(roomCode, room.playerIdx??0, room.players.length)
-  const handleBack         = async (s) => api.setStatus(roomCode, s)
-  const handleSaveGS       = async (gs) => api.saveGameState(roomCode, gs)
-  const handleStartVote    = async () => api.startVote(roomCode, playerId)
-  const handleCastVote     = async (choice) => {
+  const handleStart          = async ()  => api.setStatus(roomCode, 'game-select')
+  const handleSelectGame     = async (g) => { await api.clearGameState(roomCode); await api.selectGame(roomCode, g.id) }
+  const handleNextPlayer     = async ()  => api.nextPlayer(roomCode, room.playerIdx ?? 0, room.players.length)
+  const handleBack           = async (s) => api.setStatus(roomCode, s)
+  const handleSaveGS         = async (gs) => api.saveGameState(roomCode, gs)
+  const handleStartVote      = async ()  => api.startVote(roomCode, playerId)
+  const handleCastVote       = async (choice) => {
     if (!room?.vote) return
     await api.castVote(roomCode, playerId, choice, room.vote.yes, room.vote.no)
   }
@@ -121,25 +135,22 @@ export default function App() {
     />
   )
 
-  if (loading && !room) return <Loading/>
-  if (error || !room)   return <ErrorScreen msg={error??'Raum nicht gefunden.'} onBack={handleLeave}/>
+  if (loading && !room) return <Loading />
+  if (error || !room)   return <ErrorScreen msg={error ?? 'Raum nicht gefunden.'} onBack={handleLeave} />
 
   const players     = room.players ?? []
   const playerIdx   = room.playerIdx ?? 0
-  const currentGame = GAMES.find(g=>g.id===room.gameId) ?? null
+  const currentGame = GAMES.find(g => g.id === room.gameId) ?? null
   const isHost      = room.hostId === playerId
-  const imInGame    = players.find(p=>p.id===playerId)
-
-  const screen = roomCode
-    ? (loading&&!room ? 'loading' : room?.status ?? 'lobby')
-    : 'home'
+  const imInGame    = players.find(p => p.id === playerId)
+  const screen      = room?.status ?? 'lobby'
 
   // Mid-game join → waiting room
-  if (screen==='in-game' && !imInGame) {
-    return <WaitingRoomScreen playerName={name} roomCode={roomCode} players={players} currentGame={currentGame}/>
+  if (screen === 'in-game' && !imInGame) {
+    return <WaitingRoomScreen playerName={name} roomCode={roomCode} players={players} currentGame={currentGame} />
   }
 
-  if (screen==='lobby') return (
+  if (screen === 'lobby') return (
     <LobbyScreen
       code={roomCode} players={players} isHost={isHost}
       onAddPlayer={handleAddPlayer} onRemovePlayer={handleRemovePlayer}
@@ -149,18 +160,18 @@ export default function App() {
     />
   )
 
-  if (screen==='game-select') return (
-    <GameSelectScreen players={players} onSelectGame={handleSelectGame} onBack={()=>handleBack('lobby')}/>
+  if (screen === 'game-select') return (
+    <GameSelectScreen players={players} onSelectGame={handleSelectGame} onBack={() => handleBack('lobby')} />
   )
 
-  if (screen==='in-game') return (
+  if (screen === 'in-game') return (
     <InGameScreen
       game={currentGame} players={players} playerIdx={playerIdx}
       gameState={room.gameState} vote={room.vote}
       isHost={isHost} myPlayerId={playerId}
       isLastRound={room.lastRound}
       onNextPlayer={handleNextPlayer} onChangeDrinks={handleChangeDrinks}
-      onSaveGameState={handleSaveGS} onBack={()=>handleBack('game-select')}
+      onSaveGameState={handleSaveGS} onBack={() => handleBack('game-select')}
       onStartVote={handleStartVote} onCastVote={handleCastVote}
     />
   )
