@@ -129,7 +129,7 @@ const CSS = `
 `
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Logic
+// Logic — korrigierte Arschloch-Regeln
 // ─────────────────────────────────────────────────────────────────────────────
 const SUITS = ['♠','♥','♦','♣']
 const RED   = new Set(['♥','♦'])
@@ -142,28 +142,93 @@ const ROLE_META = {
   arschloch:        { label:'Arschloch',    emoji:'💩', bg:'rgba(239,68,68,0.12)', br:'rgba(239,68,68,0.35)',  col:'#ef4444' },
 }
 
+const cardPower = (card) => card?.value ?? 0
+const comparePower = (a, b, revolution = false) => revolution ? cardPower(a) - cardPower(b) : cardPower(b) - cardPower(a)
+
 function mkCard(s,v){ return {id:`${s}${v}`,suit:s,value:v,label:VL[v]||String(v)} }
 function createDeck(){ return SUITS.flatMap(s=>[2,3,4,5,6,7,8,9,10,11,12,13,14].map(v=>mkCard(s,v))) }
 function shuffle(a){ const r=[...a]; for(let i=r.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[r[i],r[j]]=[r[j],r[i]]} return r }
-function deal(ids){ const d=shuffle(createDeck()),h=Object.fromEntries(ids.map(id=>[id,[]])); d.forEach((c,i)=>h[ids[i%ids.length]].push(c)); ids.forEach(id=>h[id].sort((a,b)=>a.value-b.value)); return h }
-function canPlay(sel,top,cnt,rev){ if(!sel.length)return false; if(!sel.every(c=>c.value===sel[0].value))return false; if(cnt>0&&sel.length!==cnt)return false; if(top===null)return true; return rev?sel[0].value<top:sel[0].value>top }
-function nextId(cur,passed,active){ const r=active.filter(id=>!passed.includes(id)); if(!r.length)return cur; return r[(r.indexOf(cur)+1)%r.length] }
-function roles(fin,all){ const n=all.length,r={}; fin.forEach((id,i)=>{ if(i===0)r[id]='president'; else if(i===1&&n>=4)r[id]='vize'; else if(i===fin.length-1&&fin.length>=n-1&&n>=4)r[id]='vize-arschloch'; else r[id]='buerger' }); all.forEach(id=>{if(!r[id])r[id]='arschloch'}); return r }
+function sortHand(cards, revolution = false){ return [...cards].sort((a,b)=>comparePower(a,b,revolution)) }
+function deal(ids){ const d=shuffle(createDeck()),h=Object.fromEntries(ids.map(id=>[id,[]])); d.forEach((c,i)=>h[ids[i%ids.length]].push(c)); ids.forEach(id=>h[id]=sortHand(h[id])); return h }
+
+// Gültig ist nur: gleiche Werte, gleiche Anzahl wie der Stapel, und höher als der Stapel.
+// 2 räumt immer den Tisch. Bei Revolution ist die Wertung umgedreht, 2 bleibt trotzdem Räumkarte.
+function canPlay(sel, top, cnt, rev){
+  if(!sel.length) return false
+  const value = sel[0].value
+  if(!sel.every(c=>c.value===value)) return false
+  if(cnt > 0 && sel.length !== cnt) return false
+  if(top === null) return true
+  if(value === 2) return true
+  if(top === 2) return false
+  return rev ? value < top : value > top
+}
+
+function nextActiveAfter(cur, active, playerOrder){
+  if(!active.length) return null
+  const order = playerOrder.filter(id=>active.includes(id))
+  if(!order.length) return active[0]
+  const idx = order.indexOf(cur)
+  if(idx === -1) return order[0]
+  return order[(idx + 1) % order.length]
+}
+
+function nextTurn(cur, passed, active, playerOrder){
+  const available = active.filter(id=>!passed.includes(id))
+  return nextActiveAfter(cur, available.length ? available : active, playerOrder)
+}
+
+function roles(fin, all){
+  const finishOrder = [...fin]
+  all.forEach(id=>{ if(!finishOrder.includes(id)) finishOrder.push(id) })
+  const n=all.length,r={}
+  finishOrder.forEach((id,i)=>{
+    if(i===0) r[id]='president'
+    else if(i===1 && n>=4) r[id]='vize'
+    else if(i===n-2 && n>=4) r[id]='vize-arschloch'
+    else if(i===n-1) r[id]='arschloch'
+    else r[id]='buerger'
+  })
+  return r
+}
+
+function lowestStartPlayer(playerIds, hands){
+  // Klassisch beginnt die niedrigste Karte, bevorzugt 3♣ falls vorhanden.
+  const threeClubsOwner = playerIds.find(id => hands[id]?.some(c => c.suit === '♣' && c.value === 3))
+  if(threeClubsOwner) return threeClubsOwner
+  let startId = playerIds[0], best = 99
+  playerIds.forEach(id=>{
+    const lowest = [...(hands[id] || [])].sort((a,b)=>a.value-b.value)[0]?.value ?? 99
+    if(lowest < best){ best = lowest; startId = id }
+  })
+  return startId
+}
+
+function moveBestCards(fromId, toId, hands, amount){
+  if(!fromId || !toId || !hands[fromId] || !hands[toId]) return hands
+  const give = [...hands[fromId]].sort((a,b)=>b.value-a.value).slice(0,amount)
+  const giveIds = new Set(give.map(c=>c.id))
+  return {
+    ...hands,
+    [fromId]: hands[fromId].filter(c=>!giveIds.has(c.id)),
+    [toId]: sortHand([...hands[toId], ...give]),
+  }
+}
 
 function initRound(playerIds, prevRoles, roundNumber) {
-  const h = deal(playerIds)
+  let h = deal(playerIds)
   if (roundNumber > 1 && prevRoles) {
     const pres=playerIds.find(id=>prevRoles[id]==='president'), ars=playerIds.find(id=>prevRoles[id]==='arschloch')
     const viz=playerIds.find(id=>prevRoles[id]==='vize'),        va=playerIds.find(id=>prevRoles[id]==='vize-arschloch')
-    if(ars&&pres){ [...h[ars]].sort((a,b)=>b.value-a.value).slice(0,2).forEach(c=>{h[ars]=h[ars].filter(x=>x.id!==c.id);h[pres]=[...h[pres],c].sort((a,b)=>a.value-b.value)}) }
-    if(va&&viz){  [...h[va]].sort((a,b)=>b.value-a.value).slice(0,1).forEach(c=>{h[va]=h[va].filter(x=>x.id!==c.id);h[viz]=[...h[viz],c].sort((a,b)=>a.value-b.value)}) }
+    // Pflichtabgabe: Arschloch gibt die 2 besten Karten, Vize-Arschloch die beste Karte.
+    h = moveBestCards(ars, pres, h, 2)
+    h = moveBestCards(va, viz, h, 1)
     const ex={presId:pres,arsId:ars,vizeId:viz,vizeArsId:va,step:pres&&ars?'president':viz&&va?'vize':'done'}
-    const startId=playerIds.find(id=>prevRoles[id]==='arschloch')||playerIds[0]
-    return {phase:ex.step!=='done'?'exchange':'tricks',roundNumber,hands:h,pile:[],pileCount:0,pileTopValue:null,lastPlayedBy:null,currentId:startId,passedIds:[],activeIds:[...playerIds],finishedIds:[],roles:prevRoles,revolution:false,exchange:ex}
+    const startId=ars || lowestStartPlayer(playerIds, h)
+    return {phase:ex.step!=='done'?'exchange':'tricks',roundNumber,hands:h,pile:[],pileCount:0,pileTopValue:null,lastPlayedBy:null,currentId:startId,passedIds:[],activeIds:[...playerIds],playerOrder:[...playerIds],finishedIds:[],roles:prevRoles,revolution:false,exchange:ex}
   }
-  let s=playerIds[0],mv=999
-  playerIds.forEach(id=>{if(h[id][0]?.value<mv){mv=h[id][0].value;s=id}})
-  return {phase:'tricks',roundNumber:1,hands:h,pile:[],pileCount:0,pileTopValue:null,lastPlayedBy:null,currentId:s,passedIds:[],activeIds:[...playerIds],finishedIds:[],roles:{},revolution:false,exchange:null}
+  const s=lowestStartPlayer(playerIds, h)
+  return {phase:'tricks',roundNumber:1,hands:h,pile:[],pileCount:0,pileTopValue:null,lastPlayedBy:null,currentId:s,passedIds:[],activeIds:[...playerIds],playerOrder:[...playerIds],finishedIds:[],roles:{},revolution:false,exchange:null}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -202,7 +267,7 @@ function ExchangePhase({gs,players,onUpdate}) {
   const toggle=c=>setSel(p=>p.find(x=>x.id===c.id)?p.filter(x=>x.id!==c.id):p.length<need?[...p,c]:p)
   const confirm=()=>{
     if(sel.length!==need)return
-    const h={...gs.hands}; sel.forEach(c=>{h[actId]=h[actId].filter(x=>x.id!==c.id);h[recId]=[...h[recId],c].sort((a,b)=>a.value-b.value)})
+    const h={...gs.hands}; sel.forEach(c=>{h[actId]=h[actId].filter(x=>x.id!==c.id);h[recId]=sortHand([...h[recId],c], gs.revolution)})
     const next=ex.step==='president'&&ex.vizeId&&ex.vizeArsId?'vize':'done'
     onUpdate({...gs,hands:h,exchange:{...ex,step:next},phase:next==='done'?'tricks':'exchange'}); setSel([])
   }
@@ -224,7 +289,7 @@ function ExchangePhase({gs,players,onUpdate}) {
 // Round End
 // ─────────────────────────────────────────────────────────────────────────────
 function RoundEnd({gs,players,onNewRound}) {
-  const allIds=gs.activeIds.length?gs.activeIds:players.map(p=>p.id)
+  const allIds=gs.playerOrder || players.map(p=>p.id)
   const rm=roles(gs.finishedIds,allIds), arsId=Object.entries(rm).find(([,r])=>r==='arschloch')?.[0]
   const arsPly=players.find(p=>p.id===arsId)
   const ord=[...players].sort((a,b)=>{const k=Object.keys(ROLE_META);return k.indexOf(rm[a.id]||'buerger')-k.indexOf(rm[b.id]||'buerger')})
@@ -265,25 +330,54 @@ function TricksPhase({gs,players,onUpdate}) {
 
   const doPlay=()=>{
     if(!valid)return
-    const isFour=sel.length===4&&sel.every(c=>c.value===sel[0].value), newRev=isFour?!gs.revolution:gs.revolution
+    const order = gs.playerOrder || players.map(p=>p.id)
+    const playedValue = sel[0].value
+    const isFour = sel.length===4 && sel.every(c=>c.value===playedValue)
+    const clearsTable = playedValue === 2 || isFour
+    const newRev = isFour ? !gs.revolution : gs.revolution
     const h={...gs.hands}; h[gs.currentId]=hand.filter(c=>!sel.find(s=>s.id===c.id))
-    let fin=[...gs.finishedIds],act=[...gs.activeIds]
-    if(h[gs.currentId].length===0){fin=[...fin,gs.currentId];act=act.filter(id=>id!==gs.currentId)}
-    if(act.length<=1){onUpdate({...gs,hands:h,finishedIds:fin,activeIds:act,phase:'round-end',revolution:newRev});setSel([]);return}
-    let pile=sel,cnt=sel.length,top=sel[0].value,passed=[]
-    if(isFour){pile=[];cnt=0;top=null}
-    const nxt=h[gs.currentId].length===0||isFour?nextId(gs.currentId,[],act):nextId(gs.currentId,passed,act)
-    onUpdate({...gs,hands:h,pile,pileCount:cnt,pileTopValue:top,lastPlayedBy:gs.currentId,currentId:nxt,passedIds:passed,finishedIds:fin,activeIds:act,revolution:newRev})
+
+    let fin=[...gs.finishedIds], act=[...gs.activeIds]
+    if(h[gs.currentId].length===0){
+      fin=[...fin,gs.currentId]
+      act=act.filter(id=>id!==gs.currentId)
+    }
+
+    if(act.length<=1){
+      const finalFin = act.length===1 && !fin.includes(act[0]) ? [...fin, act[0]] : fin
+      onUpdate({...gs,hands:h,finishedIds:finalFin,activeIds:act,phase:'round-end',revolution:newRev,pile:[],pileCount:0,pileTopValue:null,passedIds:[]})
+      setSel([])
+      return
+    }
+
+    const pile = clearsTable ? [] : sel
+    const cnt = clearsTable ? 0 : sel.length
+    const top = clearsTable ? null : playedValue
+    const passed=[]
+    const nxt = clearsTable || h[gs.currentId].length===0
+      ? nextActiveAfter(gs.currentId, act, order)
+      : nextTurn(gs.currentId, passed, act, order)
+
+    onUpdate({...gs,hands:h,pile,pileCount:cnt,pileTopValue:top,lastPlayedBy:clearsTable?null:gs.currentId,currentId:nxt,passedIds:passed,finishedIds:fin,activeIds:act,revolution:newRev})
     setSel([])
   }
 
   const doPass=()=>{
-    const passed=[...gs.passedIds,gs.currentId], rem=gs.activeIds.filter(id=>!passed.includes(id))
-    if(rem.length===0){
+    // Auf leerem Tisch darf man nicht passen – man muss eröffnen.
+    if(gs.pileCount === 0) return
+    const order = gs.playerOrder || players.map(p=>p.id)
+    const passed=[...new Set([...gs.passedIds,gs.currentId])]
+    const stillCanAnswer=gs.activeIds.filter(id=>!passed.includes(id))
+
+    // Sobald nur noch der letzte Ausspieler übrig ist, ist der Stich vorbei.
+    // Falls der letzte Ausspieler bereits alle Karten los ist, wird ebenfalls direkt geleert.
+    const trickIsOver = stillCanAnswer.length === 0 || (stillCanAnswer.length === 1 && stillCanAnswer[0] === gs.lastPlayedBy)
+    if(trickIsOver){
+      const starter = gs.activeIds.includes(gs.lastPlayedBy) ? gs.lastPlayedBy : nextActiveAfter(gs.lastPlayedBy || gs.currentId, gs.activeIds, order)
       setClearing(true)
-      setTimeout(()=>{setClearing(false);onUpdate({...gs,pile:[],pileCount:0,pileTopValue:null,lastPlayedBy:null,currentId:gs.lastPlayedBy||gs.activeIds[0],passedIds:[]})},420)
+      setTimeout(()=>{setClearing(false);onUpdate({...gs,pile:[],pileCount:0,pileTopValue:null,lastPlayedBy:null,currentId:starter,passedIds:[]})},420)
     } else {
-      onUpdate({...gs,passedIds:passed,currentId:nextId(gs.currentId,passed,gs.activeIds)})
+      onUpdate({...gs,passedIds:passed,currentId:nextTurn(gs.currentId,passed,gs.activeIds,order)})
     }
     setSel([])
   }
@@ -367,7 +461,7 @@ function TricksPhase({gs,players,onUpdate}) {
 
       {/* Actions */}
       <div className="gm-action-bar">
-        <button onClick={doPass} className="gm-btn gm-btn-ghost" style={{flex:1}}>Passen</button>
+        <button onClick={doPass} disabled={gs.pileCount===0} className="gm-btn gm-btn-ghost" style={{flex:1}}>Passen</button>
         <button onClick={doPlay} disabled={!valid} className="gm-btn gm-btn-gold" style={{flex:2}}>
           {sel.length?`${sel.length}× ${sel[0]?.label}${sel[0]?.suit} spielen`:'Karte auswählen'}
         </button>
@@ -401,7 +495,7 @@ function StartScreen({players,onStart}) {
 // ─────────────────────────────────────────────────────────────────────────────
 export default function Arschloch({players,gameState,onUpdate}) {
   const ids=players.map(p=>p.id)
-  const handleNewRound=()=>{ const allIds=gameState.activeIds.length?gameState.activeIds:ids; onUpdate(initRound(ids,roles(gameState.finishedIds,allIds),(gameState.roundNumber||1)+1)) }
+  const handleNewRound=()=>{ const allIds=gameState.playerOrder || ids; onUpdate(initRound(ids,roles(gameState.finishedIds,allIds),(gameState.roundNumber||1)+1)) }
   return (
     <>
       <style>{CSS}</style>
