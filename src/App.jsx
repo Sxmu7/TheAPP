@@ -1,10 +1,10 @@
-import { useState, useEffect, useCallback } from 'react'
-import { get, ref }                          from 'firebase/database'
-import { db }                                from './firebase'
-import { usePlayerName }                     from './hooks/usePlayerName'
-import { useRoom }                           from './hooks/useRoom'
-import * as api                              from './firebaseApi'
-import { GAMES, PLAYER_COLORS, genCode }     from './constants'
+import { useState, useEffect }        from 'react'
+import { get, ref }                   from 'firebase/database'
+import { db }                         from './firebase'
+import { usePlayerName }              from './hooks/usePlayerName'
+import { useRoom }                    from './hooks/useRoom'
+import * as api                       from './firebaseApi'
+import { GAMES, PLAYER_COLORS, genCode } from './constants'
 
 import OnboardingScreen  from './screens/OnboardingScreen'
 import LandingScreen     from './screens/LandingScreen'
@@ -35,50 +35,22 @@ function ErrorScreen({ msg, onBack }) {
 export default function App() {
   const { name, playerId, saveName, clearName, hasName } = usePlayerName()
 
-  // ── roomCode starts EMPTY — never from URL (URL handled by useEffect below) ──
-  const [roomCode, setRoomCode] = useState('')
+  const [roomCode, setRoomCode] = useState(() => {
+    const p = new URLSearchParams(window.location.search).get('join')
+    return p ? p.toUpperCase() : ''
+  })
   const [creating, setCreating] = useState(false)
   const [joining,  setJoining]  = useState(false)
 
   const { room, loading, error } = useRoom(roomCode)
 
-  // ── Core join: ONE Firebase read, then add player or enter waiting room ────
-  const doJoin = useCallback(async (code) => {
-    const snap = await get(ref(db, `rooms/${code}`))
-    if (!snap.exists()) { alert('Raum nicht gefunden.'); return false }
-
-    const data       = snap.val()
-    const players    = data.players || {}
-    const roomStatus = data.status  || 'lobby'
-
-    // Only add if not already in room
-    if (!players[playerId]) {
-      if (roomStatus === 'in-game') {
-        // Mid-game join → waiting room, gets added at next round
-        await api.joinWaitingRoom(code, playerId, name)
-      } else {
-        const colorIdx = Object.keys(players).length % PLAYER_COLORS.length
-        await api.addPlayerWithId(code, playerId, name, colorIdx)
-      }
-    }
-
-    window.history.replaceState({}, '', '/')
-    setRoomCode(code)
-    return true
-  }, [name, playerId])
-
-  // ── Auto-join from ?join=CODE URL (QR code or shared link) ────────────────
-  // Runs when hasName changes so it works both for:
-  //   - Users who already have a name (fires immediately)
-  //   - New users who just set a name in onboarding (fires after saveName)
+  // Auto-join via URL ?join=CODE
   useEffect(() => {
     const code = new URLSearchParams(window.location.search).get('join')
-    if (code && hasName && !roomCode) {
-      doJoin(code.toUpperCase())
-    }
-  }, [hasName, doJoin])
+    if (code && hasName && !roomCode) handleJoinRoom(code.toUpperCase())
+  }, [hasName])
 
-  // ── Auto-resolve vote when all players have voted ──────────────────────────
+  // Auto-resolve vote when all players have voted
   useEffect(() => {
     if (!room?.vote?.active) return
     const total = room.players?.length || 0
@@ -87,7 +59,7 @@ export default function App() {
     if (total > 0 && yes + no >= total) {
       api.resolveVote(roomCode, yes > total / 2 ? 'yes' : 'no')
     }
-  }, [room?.vote, roomCode])
+  }, [room?.vote])
 
   // ── Handlers ───────────────────────────────────────────────────────────────
 
@@ -104,32 +76,46 @@ export default function App() {
   const handleJoinRoom = async (code) => {
     if (!hasName) return
     setJoining(true)
-    await doJoin(code)
+    const exists = await api.roomExists(code)
+    if (!exists) { alert('Raum nicht gefunden.'); setJoining(false); return }
+
+    // Check if this device's player is already in the room
+    const playerSnap = await get(ref(db, `rooms/${code}/players/${playerId}`))
+    if (!playerSnap.exists()) {
+      const roomSnap = await get(ref(db, `rooms/${code}`))
+      const data     = roomSnap.val()
+      const count    = data?.players ? Object.keys(data.players).length : 0
+      const colorIdx = count % PLAYER_COLORS.length
+      await api.addPlayerWithId(code, playerId, name, colorIdx)
+    }
+
+    window.history.replaceState({}, '', '/')
+    setRoomCode(code)
     setJoining(false)
   }
 
-  const handleLeave          = ()       => setRoomCode('')
+  const handleLeave          = ()      => setRoomCode('')
   const handleRegenerateCode = async () => {
-    const newCode = await api.regenerateCode(roomCode, playerId)
+    const newCode = await api.regenerateCode(roomCode, playerId, room.players)
     setRoomCode(newCode)
   }
-  const handleAddPlayer = async (n) => {
+  const handleAddPlayer      = async (n) => {
     if (!room || room.players.length >= 8) return
     await api.addPlayer(roomCode, n, room.players.length)
   }
-  const handleRemovePlayer = async (id) => api.removePlayer(roomCode, id)
-  const handleChangeDrinks = async (id, delta) => {
+  const handleRemovePlayer   = async (id) => api.removePlayer(roomCode, id)
+  const handleChangeDrinks   = async (id, delta) => {
     const p = room?.players?.find(x => x.id === id)
     if (!p) return
     await api.changeDrinks(roomCode, id, p.drinks + delta)
   }
-  const handleStart       = async ()   => api.setStatus(roomCode, 'game-select')
-  const handleSelectGame  = async (g)  => { await api.clearGameState(roomCode); await api.selectGame(roomCode, g.id) }
-  const handleNextPlayer  = async ()   => api.nextPlayer(roomCode, room.playerIdx ?? 0, room.players.length)
-  const handleBack        = async (s)  => api.setStatus(roomCode, s)
-  const handleSaveGS      = async (gs) => api.saveGameState(roomCode, gs)
-  const handleStartVote   = async ()   => api.startVote(roomCode, playerId)
-  const handleCastVote    = async (choice) => {
+  const handleStart          = async ()  => api.setStatus(roomCode, 'game-select')
+  const handleSelectGame     = async (g) => { await api.clearGameState(roomCode); await api.selectGame(roomCode, g.id) }
+  const handleNextPlayer     = async ()  => api.nextPlayer(roomCode, room.playerIdx ?? 0, room.players.length)
+  const handleBack           = async (s) => api.setStatus(roomCode, s)
+  const handleSaveGS         = async (gs) => api.saveGameState(roomCode, gs)
+  const handleStartVote      = async ()  => api.startVote(roomCode, playerId)
+  const handleCastVote       = async (choice) => {
     if (!room?.vote) return
     await api.castVote(roomCode, playerId, choice, room.vote.yes, room.vote.no)
   }

@@ -1,14 +1,19 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// SCHRITT 3: Füge hier deine Firebase-Konfiguration ein.
+// Du findest sie in der Firebase Console unter:
+//   Projekteinstellungen → Allgemein → Deine Apps → SDK-Konfiguration
+// ─────────────────────────────────────────────────────────────────────────────
 import { initializeApp } from 'firebase/app'
 import { getDatabase }   from 'firebase/database'
 
 const firebaseConfig = {
-  apiKey:            "AIzaSyD1shmrqKKiXJhTeBLlLAVcB8KcJgD1fvc",
-  authDomain:        "the-app-6912e.firebaseapp.com",
-  databaseURL:       "https://the-app-6912e-default-rtdb.europe-west1.firebasedatabase.app",
-  projectId:         "the-app-6912e",
-  storageBucket:     "the-app-6912e.firebasestorage.app",
-  messagingSenderId: "537113841062",
-  appId:             "1:537113841062:web:725d0628d9ab47ae665367",
+  apiKey:            "HIER_DEIN_API_KEY",
+  authDomain:        "HIER_DEIN_PROJEKT.firebaseapp.com",
+  databaseURL:       "https://HIER_DEIN_PROJEKT-default-rtdb.firebaseio.com",
+  projectId:         "HIER_DEIN_PROJEKT",
+  storageBucket:     "HIER_DEIN_PROJEKT.appspot.com",
+  messagingSenderId: "HIER_DEINE_SENDER_ID",
+  appId:             "HIER_DEINE_APP_ID",
 }
 
 const app = initializeApp(firebaseConfig)
