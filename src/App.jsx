@@ -1,9 +1,9 @@
-import { useState, useEffect }        from 'react'
-import { get, ref }                   from 'firebase/database'
-import { db }                         from './firebase'
-import { usePlayerName }              from './hooks/usePlayerName'
-import { useRoom }                    from './hooks/useRoom'
-import * as api                       from './firebaseApi'
+import { useState, useEffect }           from 'react'
+import { get, ref }                      from 'firebase/database'
+import { db }                            from './firebase'
+import { usePlayerName }                 from './hooks/usePlayerName'
+import { useRoom }                       from './hooks/useRoom'
+import * as api                          from './firebaseApi'
 import { GAMES, PLAYER_COLORS, genCode } from './constants'
 
 import OnboardingScreen  from './screens/OnboardingScreen'
@@ -47,10 +47,10 @@ export default function App() {
   // Auto-join via URL ?join=CODE
   useEffect(() => {
     const code = new URLSearchParams(window.location.search).get('join')
-    if (code && hasName && !roomCode) handleJoinRoom(code.toUpperCase())
+    if (code && hasName && !roomCode) doJoin(code.toUpperCase())
   }, [hasName])
 
-  // Auto-resolve vote when all players have voted
+  // Auto-resolve vote when all players voted
   useEffect(() => {
     if (!room?.vote?.active) return
     const total = room.players?.length || 0
@@ -60,6 +60,27 @@ export default function App() {
       api.resolveVote(roomCode, yes > total / 2 ? 'yes' : 'no')
     }
   }, [room?.vote])
+
+  // ── Core join logic ────────────────────────────────────────────────────────
+
+  const doJoin = async (code) => {
+    // One single read — get entire room
+    const snap = await get(ref(db, `rooms/${code}`))
+    if (!snap.exists()) { alert('Raum nicht gefunden.'); return }
+
+    const data    = snap.val()
+    const players = data.players || {}
+
+    // Only write if not already in room
+    if (!players[playerId]) {
+      const count    = Object.keys(players).length
+      const colorIdx = count % PLAYER_COLORS.length
+      await api.addPlayerWithId(code, playerId, name, colorIdx)
+    }
+
+    window.history.replaceState({}, '', '/')
+    setRoomCode(code)
+  }
 
   // ── Handlers ───────────────────────────────────────────────────────────────
 
@@ -76,27 +97,13 @@ export default function App() {
   const handleJoinRoom = async (code) => {
     if (!hasName) return
     setJoining(true)
-    const exists = await api.roomExists(code)
-    if (!exists) { alert('Raum nicht gefunden.'); setJoining(false); return }
-
-    // Check if this device's player is already in the room
-    const playerSnap = await get(ref(db, `rooms/${code}/players/${playerId}`))
-    if (!playerSnap.exists()) {
-      const roomSnap = await get(ref(db, `rooms/${code}`))
-      const data     = roomSnap.val()
-      const count    = data?.players ? Object.keys(data.players).length : 0
-      const colorIdx = count % PLAYER_COLORS.length
-      await api.addPlayerWithId(code, playerId, name, colorIdx)
-    }
-
-    window.history.replaceState({}, '', '/')
-    setRoomCode(code)
+    await doJoin(code)
     setJoining(false)
   }
 
-  const handleLeave          = ()      => setRoomCode('')
+  const handleLeave          = ()       => setRoomCode('')
   const handleRegenerateCode = async () => {
-    const newCode = await api.regenerateCode(roomCode, playerId, room.players)
+    const newCode = await api.regenerateCode(roomCode, playerId)
     setRoomCode(newCode)
   }
   const handleAddPlayer      = async (n) => {
@@ -109,12 +116,12 @@ export default function App() {
     if (!p) return
     await api.changeDrinks(roomCode, id, p.drinks + delta)
   }
-  const handleStart          = async ()  => api.setStatus(roomCode, 'game-select')
-  const handleSelectGame     = async (g) => { await api.clearGameState(roomCode); await api.selectGame(roomCode, g.id) }
-  const handleNextPlayer     = async ()  => api.nextPlayer(roomCode, room.playerIdx ?? 0, room.players.length)
-  const handleBack           = async (s) => api.setStatus(roomCode, s)
+  const handleStart          = async ()   => api.setStatus(roomCode, 'game-select')
+  const handleSelectGame     = async (g)  => { await api.clearGameState(roomCode); await api.selectGame(roomCode, g.id) }
+  const handleNextPlayer     = async ()   => api.nextPlayer(roomCode, room.playerIdx ?? 0, room.players.length)
+  const handleBack           = async (s)  => api.setStatus(roomCode, s)
   const handleSaveGS         = async (gs) => api.saveGameState(roomCode, gs)
-  const handleStartVote      = async ()  => api.startVote(roomCode, playerId)
+  const handleStartVote      = async ()   => api.startVote(roomCode, playerId)
   const handleCastVote       = async (choice) => {
     if (!room?.vote) return
     await api.castVote(roomCode, playerId, choice, room.vote.yes, room.vote.no)
@@ -145,7 +152,6 @@ export default function App() {
   const imInGame    = players.find(p => p.id === playerId)
   const screen      = room?.status ?? 'lobby'
 
-  // Mid-game join → waiting room
   if (screen === 'in-game' && !imInGame) {
     return <WaitingRoomScreen playerName={name} roomCode={roomCode} players={players} currentGame={currentGame} />
   }
