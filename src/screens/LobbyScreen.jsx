@@ -9,16 +9,19 @@ export default function LobbyScreen({
   onStart,
   onBack,
 }) {
-  const [name, setCopied_name] = useState('')
-  const [copied, setCopied]    = useState(false)
+  const [name, setName]   = useState('')
+  const [copied, setCopied] = useState(false)
+  const [adding, setAdding] = useState(false)
 
-  const canAdd   = name.trim().length > 0 && players.length < 8
+  const canAdd   = name.trim().length > 0 && players.length < 8 && !adding
   const canStart = players.length >= 2
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!canAdd) return
-    onAddPlayer(name.trim())
-    setCopied_name('')
+    setAdding(true)
+    await onAddPlayer(name.trim())
+    setName('')
+    setAdding(false)
   }
 
   const handleCopy = () => {
@@ -30,52 +33,40 @@ export default function LobbyScreen({
   return (
     <div className="screen fade-in">
       {/* Header */}
-      <div
-        style={{
-          display:       'flex',
-          alignItems:    'center',
-          gap:           12,
-          marginBottom:  '1.5rem',
-        }}
-      >
-        <button className="icon-btn" onClick={onBack} aria-label="Zurück">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: '1.5rem' }}>
+        <button className="icon-btn" onClick={onBack} aria-label="Verlassen">
           <i className="ti ti-arrow-left" />
         </button>
         <h2 style={{ fontSize: 18, fontWeight: 500 }}>Lobby</h2>
+
+        {/* Live-Indikator */}
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div
+            style={{
+              width: 7, height: 7, borderRadius: '50%',
+              background: '#1D9E75',
+              boxShadow: '0 0 0 2px #E1F5EE',
+            }}
+          />
+          <span style={{ fontSize: 12, color: 'var(--text-2)' }}>Live</span>
+        </div>
       </div>
 
-      {/* Room code card */}
+      {/* Raumcode */}
       <div
         style={{
-          background:    'var(--primary-light)',
-          border:        '1px solid var(--primary-border)',
-          borderRadius:  'var(--r-lg)',
-          padding:       '1.25rem',
-          textAlign:     'center',
-          marginBottom:  '1.5rem',
+          background:   'var(--primary-light)',
+          border:       '1px solid var(--primary-border)',
+          borderRadius: 'var(--r-lg)',
+          padding:      '1.25rem',
+          textAlign:    'center',
+          marginBottom: '1.5rem',
         }}
       >
-        <p
-          style={{
-            margin:        '0 0 8px',
-            fontSize:      11,
-            fontWeight:    500,
-            letterSpacing: '0.1em',
-            color:         'var(--primary)',
-          }}
-        >
-          RAUMCODE
+        <p style={{ margin: '0 0 8px', fontSize: 11, fontWeight: 500, letterSpacing: '0.1em', color: 'var(--primary)' }}>
+          RAUMCODE — teile ihn mit deinen Freunden
         </p>
-        <p
-          style={{
-            margin:        '0 0 14px',
-            fontSize:      46,
-            fontWeight:    500,
-            letterSpacing: '0.28em',
-            color:         'var(--primary-text)',
-            lineHeight:    1,
-          }}
-        >
+        <p style={{ margin: '0 0 14px', fontSize: 46, fontWeight: 500, letterSpacing: '0.28em', color: 'var(--primary-text)', lineHeight: 1 }}>
           {code}
         </p>
         <button
@@ -89,27 +80,25 @@ export default function LobbyScreen({
             fontSize:     12,
             cursor:       'pointer',
             fontFamily:   'inherit',
-            transition:   'background 0.12s',
           }}
         >
           {copied ? '✓ Kopiert!' : 'Code kopieren'}
         </button>
       </div>
 
-      {/* Add player */}
+      {/* Spieler hinzufügen */}
       <div style={{ marginBottom: '1.25rem' }}>
-        <label className="label">
-          Spieler ({players.length}/8)
-        </label>
+        <label className="label">Spieler ({players.length}/8)</label>
         <div style={{ display: 'flex', gap: 8 }}>
           <input
             type="text"
             value={name}
-            onChange={(e) => setCopied_name(e.target.value)}
+            onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
             placeholder="Name eingeben…"
             maxLength={16}
             style={{ flex: 1 }}
+            disabled={adding}
           />
           <button
             onClick={handleAdd}
@@ -126,16 +115,15 @@ export default function LobbyScreen({
               cursor:       canAdd ? 'pointer' : 'not-allowed',
               whiteSpace:   'nowrap',
               fontFamily:   'inherit',
-              transition:   'background 0.12s',
               flexShrink:   0,
             }}
           >
-            + Hinzufügen
+            {adding ? '…' : '+ Hinzufügen'}
           </button>
         </div>
       </div>
 
-      {/* Player list */}
+      {/* Spielerliste — aktualisiert sich in Echtzeit */}
       <div style={{ marginBottom: '1.75rem' }}>
         {players.length === 0 ? (
           <div className="empty-state">
@@ -147,14 +135,10 @@ export default function LobbyScreen({
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {players.map((p, i) => (
-              <div key={p.id} className="player-row">
+              <div key={p.id} className="player-row fade-in">
                 <Avatar player={p} size={36} />
-                <span style={{ flex: 1, fontWeight: 500, fontSize: 15 }}>
-                  {p.name}
-                </span>
-                <span style={{ fontSize: 12, color: 'var(--text-3)' }}>
-                  #{i + 1}
-                </span>
+                <span style={{ flex: 1, fontWeight: 500, fontSize: 15 }}>{p.name}</span>
+                <span style={{ fontSize: 12, color: 'var(--text-3)' }}>#{i + 1}</span>
                 <button
                   className="icon-btn"
                   onClick={() => onRemovePlayer(p.id)}
@@ -171,16 +155,8 @@ export default function LobbyScreen({
       <button className="btn-primary" onClick={onStart} disabled={!canStart}>
         Spiel starten →
       </button>
-
       {!canStart && (
-        <p
-          style={{
-            textAlign: 'center',
-            fontSize:  12,
-            color:     'var(--text-3)',
-            marginTop: 8,
-          }}
-        >
+        <p style={{ textAlign: 'center', fontSize: 12, color: 'var(--text-3)', marginTop: 8 }}>
           Mindestens 2 Spieler erforderlich
         </p>
       )}

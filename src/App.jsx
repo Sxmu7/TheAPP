@@ -1,89 +1,164 @@
 import { useState } from 'react'
-import HomeScreen     from './screens/HomeScreen'
-import LobbyScreen    from './screens/LobbyScreen'
+import HomeScreen       from './screens/HomeScreen'
+import LobbyScreen      from './screens/LobbyScreen'
 import GameSelectScreen from './screens/GameSelectScreen'
-import InGameScreen   from './screens/InGameScreen'
-import { PLAYER_COLORS, genCode } from './constants'
+import InGameScreen     from './screens/InGameScreen'
+import { useRoom }      from './hooks/useRoom'
+import * as api         from './firebaseApi'
+import { GAMES, genCode } from './constants'
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Lade-Screen
+// ─────────────────────────────────────────────────────────────────────────────
+function Loading({ label = 'Verbinde…' }) {
+  return (
+    <div
+      style={{
+        display:        'flex',
+        flexDirection:  'column',
+        alignItems:     'center',
+        justifyContent: 'center',
+        minHeight:      '100dvh',
+        gap:            12,
+      }}
+    >
+      <div style={{ fontSize: 36 }}>🍺</div>
+      <p style={{ color: 'var(--text-2)', fontSize: 14, margin: 0 }}>{label}</p>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fehler-Screen
+// ─────────────────────────────────────────────────────────────────────────────
+function ErrorScreen({ message, onBack }) {
+  return (
+    <div
+      style={{
+        display:        'flex',
+        flexDirection:  'column',
+        alignItems:     'center',
+        justifyContent: 'center',
+        minHeight:      '100dvh',
+        padding:        '2rem',
+        textAlign:      'center',
+        gap:            16,
+      }}
+    >
+      <div style={{ fontSize: 36 }}>⚠️</div>
+      <p style={{ fontWeight: 500, margin: 0 }}>{message}</p>
+      <button className="btn-ghost" onClick={onBack} style={{ maxWidth: 240 }}>
+        Zurück zur Startseite
+      </button>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// App — Haupt-State-Machine
+// ─────────────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [screen, setScreen]     = useState('home')
-  const [code, setCode]         = useState('')
-  const [players, setPlayers]   = useState([])
-  const [game, setGame]         = useState(null)
-  const [playerIdx, setPlayerIdx] = useState(0)
+  const [roomCode, setRoomCode]   = useState('')
+  const [joining, setJoining]     = useState(false)
 
-  // ── Room ──────────────────────────────────────────────────────────────────
-  const handleCreateRoom = () => {
-    setCode(genCode())
-    setPlayers([])
-    setScreen('lobby')
+  const { room, loading, error } = useRoom(roomCode)
+
+  // Der aktuelle Screen leitet sich aus dem Firebase-Status ab.
+  // Nur "home" ist rein lokal (kein Raum-Code).
+  const screen = roomCode
+    ? loading && !room ? 'loading' : (room?.status ?? 'lobby')
+    : 'home'
+
+  // ── Raum erstellen ─────────────────────────────────────────────────────────
+  const handleCreateRoom = async () => {
+    const code = genCode()
+    await api.createRoom(code)
+    setRoomCode(code)
   }
 
-  const handleJoinRoom = (c) => {
-    setCode(c.toUpperCase())
-    setPlayers([])
-    setScreen('lobby')
+  // ── Raum beitreten ─────────────────────────────────────────────────────────
+  const handleJoinRoom = async (code) => {
+    setJoining(true)
+    const exists = await api.roomExists(code)
+    setJoining(false)
+    if (!exists) {
+      alert('Raum nicht gefunden. Überprüfe den Code.')
+      return
+    }
+    setRoomCode(code)
   }
 
-  // ── Players ───────────────────────────────────────────────────────────────
-  const handleAddPlayer = (name) => {
-    setPlayers((prev) => [
-      ...prev,
-      {
-        id:     Date.now(),
-        name,
-        color:  PLAYER_COLORS[prev.length % PLAYER_COLORS.length],
-        drinks: 0,
-      },
-    ])
+  // ── Spieler ────────────────────────────────────────────────────────────────
+  const handleAddPlayer = async (name) => {
+    if (!room || room.players.length >= 8) return
+    const colorIdx = room.players.length  // 0, 1, 2, … → eindeutige Farbe
+    await api.addPlayer(roomCode, name, colorIdx)
   }
 
-  const handleRemovePlayer = (id) => {
-    setPlayers((prev) => prev.filter((p) => p.id !== id))
+  const handleRemovePlayer = async (id) => {
+    await api.removePlayer(roomCode, id)
   }
 
-  const handleChangeDrinks = (id, delta) => {
-    setPlayers((prev) =>
-      prev.map((p) =>
-        p.id === id ? { ...p, drinks: Math.max(0, p.drinks + delta) } : p,
-      ),
-    )
+  const handleChangeDrinks = async (playerId, delta) => {
+    const player = room?.players?.find((p) => p.id === playerId)
+    if (!player) return
+    await api.changeDrinks(roomCode, playerId, player.drinks + delta)
   }
 
-  // ── Game flow ─────────────────────────────────────────────────────────────
-  const handleStart = () => {
-    setPlayerIdx(0)
-    setScreen('game-select')
+  // ── Spielfluss ─────────────────────────────────────────────────────────────
+  const handleStart = async () => {
+    await api.setStatus(roomCode, 'game-select')
   }
 
-  const handleSelectGame = (g) => {
-    setGame(g)
-    setScreen('in-game')
+  const handleSelectGame = async (g) => {
+    await api.selectGame(roomCode, g.id)
   }
 
-  const handleNextPlayer = () => {
-    setPlayerIdx((prev) => (prev + 1) % players.length)
+  const handleNextPlayer = async () => {
+    await api.nextPlayer(roomCode, room.playerIdx ?? 0, room.players.length)
   }
 
-  // ── Router ────────────────────────────────────────────────────────────────
+  const handleBack = async (targetStatus) => {
+    await api.setStatus(roomCode, targetStatus)
+  }
+
+  const handleLeave = () => setRoomCode('')
+
+  // ── Render ─────────────────────────────────────────────────────────────────
   if (screen === 'home') {
     return (
       <HomeScreen
         onCreateRoom={handleCreateRoom}
         onJoinRoom={handleJoinRoom}
+        joiningRoom={joining}
       />
     )
   }
 
+  if (screen === 'loading') return <Loading />
+
+  if (error || !room) {
+    return (
+      <ErrorScreen
+        message={error ?? 'Raum nicht gefunden.'}
+        onBack={handleLeave}
+      />
+    )
+  }
+
+  const players    = room.players ?? []
+  const playerIdx  = room.playerIdx ?? 0
+  const currentGame = GAMES.find((g) => g.id === room.gameId) ?? null
+
   if (screen === 'lobby') {
     return (
       <LobbyScreen
-        code={code}
+        code={roomCode}
         players={players}
         onAddPlayer={handleAddPlayer}
         onRemovePlayer={handleRemovePlayer}
         onStart={handleStart}
-        onBack={() => setScreen('home')}
+        onBack={handleLeave}
       />
     )
   }
@@ -93,7 +168,7 @@ export default function App() {
       <GameSelectScreen
         players={players}
         onSelectGame={handleSelectGame}
-        onBack={() => setScreen('lobby')}
+        onBack={() => handleBack('lobby')}
       />
     )
   }
@@ -101,12 +176,12 @@ export default function App() {
   if (screen === 'in-game') {
     return (
       <InGameScreen
-        game={game}
+        game={currentGame}
         players={players}
         playerIdx={playerIdx}
         onNextPlayer={handleNextPlayer}
         onChangeDrinks={handleChangeDrinks}
-        onBack={() => setScreen('game-select')}
+        onBack={() => handleBack('game-select')}
       />
     )
   }

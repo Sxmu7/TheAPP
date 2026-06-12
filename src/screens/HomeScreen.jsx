@@ -1,11 +1,19 @@
 import { useState } from 'react'
 
-export default function HomeScreen({ onCreateRoom, onJoinRoom }) {
-  const [joining, setJoining]   = useState(false)
-  const [code, setCode]         = useState('')
+export default function HomeScreen({ onCreateRoom, onJoinRoom, joiningRoom }) {
+  const [joining, setJoining] = useState(false)
+  const [code, setCode]       = useState('')
+  const [creating, setCreating] = useState(false)
 
-  const handleJoin = () => {
-    if (code.length >= 4) onJoinRoom(code)
+  const handleCreate = async () => {
+    setCreating(true)
+    await onCreateRoom()
+    setCreating(false)
+  }
+
+  const handleJoin = async () => {
+    if (code.length < 4) return
+    await onJoinRoom(code)
   }
 
   return (
@@ -41,22 +49,18 @@ export default function HomeScreen({ onCreateRoom, onJoinRoom }) {
       >
         Prost!
       </h1>
-
-      <p
-        style={{
-          color:         'var(--text-2)',
-          marginBottom:  '2.75rem',
-          fontSize:      15,
-        }}
-      >
+      <p style={{ color: 'var(--text-2)', marginBottom: '2.75rem', fontSize: 15 }}>
         Trinkspiele mit Freunden
       </p>
 
-      {/* Actions */}
       {!joining ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <button className="btn-primary" onClick={onCreateRoom}>
-            + &nbsp;Raum erstellen
+          <button
+            className="btn-primary"
+            onClick={handleCreate}
+            disabled={creating}
+          >
+            {creating ? 'Erstelle Raum…' : '+ Raum erstellen'}
           </button>
           <button className="btn-ghost" onClick={() => setJoining(true)}>
             Raum beitreten
@@ -84,9 +88,9 @@ export default function HomeScreen({ onCreateRoom, onJoinRoom }) {
           <button
             className="btn-primary"
             onClick={handleJoin}
-            disabled={code.length < 4}
+            disabled={code.length < 4 || joiningRoom}
           >
-            Beitreten
+            {joiningRoom ? 'Suche Raum…' : 'Beitreten'}
           </button>
           <button
             onClick={() => { setJoining(false); setCode('') }}
@@ -97,6 +101,7 @@ export default function HomeScreen({ onCreateRoom, onJoinRoom }) {
               cursor:     'pointer',
               padding:    8,
               fontSize:   14,
+              fontFamily: 'inherit',
             }}
           >
             Abbrechen
@@ -104,13 +109,7 @@ export default function HomeScreen({ onCreateRoom, onJoinRoom }) {
         </div>
       )}
 
-      <p
-        style={{
-          marginTop: '3.5rem',
-          fontSize:  12,
-          color:     'var(--text-3)',
-        }}
-      >
+      <p style={{ marginTop: '3.5rem', fontSize: 12, color: 'var(--text-3)' }}>
         Bitte trinkt verantwortungsvoll.
       </p>
     </div>
